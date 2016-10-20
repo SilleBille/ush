@@ -13,7 +13,9 @@
 #include <signal.h>
 #include <sys/unistd.h>
 #include <fcntl.h>
+#include<string.h>
 #include "parse.h"
+#include "builtin.h"
 
 /* Professor Code!!! Don't touch! */
 
@@ -21,81 +23,101 @@ static void prCmd(Cmd c) {
 	int i;
 	pid_t pid;
 	int fd;
-	pid = fork();
-	if (pid < 0)
-		perror("Fork error!\n");
-	else if (pid > 0) {
-		// parent process
 
-		int status;
-		waitpid(pid, &status, 0);
-	} else if (pid == 0) {
+	// Shouldn't fork at all if found in builtin!!
 
-		// child process
-
-		if (c) {
-			// printf("%s%s ", c->exec == Tamp ? "BG " : "", c->args[0]);
-			if (c->in == Tin)
-				printf("<(%s) ", c->infile);
-			if (c->out != Tnil)
-				switch (c->out) {
-				case Tout:
-					// printf(">(%s) ", c->outfile);
-
-					// Create file if not exist. OVERWRITE ie. TRUNCATE if file exist
-					fd = open(c->outfile, O_CREAT | O_WRONLY | O_TRUNC, 0777);
-					dup2(fd, STDOUT_FILENO);
-					close(fd);
-					break;
-				case ToutErr:
-					// printf(">&(%s) ", c->outfile);
-					fd = open(c->outfile, O_CREAT | O_WRONLY | O_TRUNC, 0777);
-					dup2(fd, STDOUT_FILENO);
-					dup2(fd, STDERR_FILENO);
-					close(fd);
-					break;
-				case Tapp:
-					// printf(">>(%s) ", c->outfile);
-
-					// Create file if not exist. APPEND if exist
-					fd = open(c->outfile, O_CREAT | O_WRONLY | O_APPEND, 0777);
-					dup2(fd, STDOUT_FILENO);
-					close(fd);
-					break;
-
-				case TappErr:
-					// printf(">>&(%s) ", c->outfile);
-					fd = open(c->outfile, O_CREAT | O_WRONLY | O_APPEND, 0777);
-					dup2(fd, STDOUT_FILENO);
-					dup2(fd, STDERR_FILENO);
-					close(fd);
-					break;
-				case Tpipe:
-					printf("| ");
-					break;
-				case TpipeErr:
-					printf("|& ");
-					break;
-				default:
-					fprintf(stderr, "Shouldn't get here\n");
-					exit(-1);
-				}
-
-			if (c->nargs > 1) {
-				printf("[");
-				for (i = 1; c->args[i] != NULL; i++)
-					printf("%d:%s,", i, c->args[i]);
-				printf("\b]");
-			}
-			// putchar('\n');
+	if (isBuiltIn(c)) {
+		if (strcmp(c->args[0], "cd") == 0) {
+			printf("c->args[1] is: %d\n", c->args[1] == NULL);
+			cd_cmd(c);
 		}
-		// TODO: Define built in command and execute them if found!
-		// Only if it's not built in command
-		execvp(c->args[0], c->args);
+	} else {
+		pid = fork();
+		if (pid < 0)
+			perror("Fork error!\n");
+		else if (pid > 0) {
+			// parent process
+
+			int status;
+			waitpid(pid, &status, 0);
+		} else if (pid == 0) {
+
+			// child process
+
+			if (c) {
+				// printf("%s%s ", c->exec == Tamp ? "BG " : "", c->args[0]);
+				if (c->in == Tin) {
+					// printf("<(%s) ", c->infile);
+
+					// Read from stdin
+					fd = open(c->infile, O_RDONLY);
+					dup2(STDIN_FILENO, fd);
+					close(fd);
+				}
+				if (c->out != Tnil)
+					switch (c->out) {
+					case Tout:
+						// printf(">(%s) ", c->outfile);
+
+						// Create file if not exist. OVERWRITE ie. TRUNCATE if file exist
+						fd = open(c->outfile, O_CREAT | O_WRONLY | O_TRUNC,
+								0777);
+						dup2(fd, STDOUT_FILENO);
+						close(fd);
+						break;
+					case ToutErr:
+						// printf(">&(%s) ", c->outfile);
+						fd = open(c->outfile, O_CREAT | O_WRONLY | O_TRUNC,
+								0777);
+						dup2(fd, STDOUT_FILENO);
+						dup2(fd, STDERR_FILENO);
+						close(fd);
+						break;
+					case Tapp:
+						// printf(">>(%s) ", c->outfile);
+
+						// Create file if not exist. APPEND if exist
+						fd = open(c->outfile, O_CREAT | O_WRONLY | O_APPEND,
+								0777);
+						dup2(fd, STDOUT_FILENO);
+						close(fd);
+						break;
+
+					case TappErr:
+						// printf(">>&(%s) ", c->outfile);
+						fd = open(c->outfile, O_CREAT | O_WRONLY | O_APPEND,
+								0777);
+						dup2(fd, STDOUT_FILENO);
+						dup2(fd, STDERR_FILENO);
+						close(fd);
+						break;
+					case Tpipe:
+						printf("| ");
+						break;
+					case TpipeErr:
+						printf("|& ");
+						break;
+					default:
+						fprintf(stderr, "Shouldn't get here\n");
+						exit(-1);
+					}
+
+				if (c->nargs > 1) {
+					printf("[");
+					for (i = 1; c->args[i] != NULL; i++)
+						printf("%d:%s,", i, c->args[i]);
+					printf("\b]");
+				}
+				// putchar('\n');
+			}
+			// TODO: Define built in command and execute them if found!
+			// Only if it's not built in command
+			execvp(c->args[0], c->args);
+		}
+		// this driver understands one command
+		if (!strcmp(c->args[0], "end"))
+			exit(0);
 	}
-	// this driver understands one command
-	if (!strcmp(c->args[0], "end"))
-		exit(0);
 
 }
 static void prPipe(Pipe p) {
