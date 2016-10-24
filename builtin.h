@@ -10,7 +10,7 @@
 
 #include"parse.h"
 
-int isBuiltIn(Cmd c);
+int isBuiltIn(char *c);
 
 void cd_cmd(Cmd c);
 void echo_cmd(Cmd c);
