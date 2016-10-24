@@ -72,8 +72,9 @@ void pwd_cmd() {
 }
 
 void where_cmd(Cmd c) {
-	char *path = getenv("PATH");
-
+	char *origPath = getenv("PATH");
+	char path[1000];
+	strcpy(path, origPath);
 	char delimiter[1];
 	delimiter[0] = ':'; // The path is separated using :
 	if (isBuiltIn(c->args[1]) != -1) {
@@ -86,7 +87,6 @@ void where_cmd(Cmd c) {
 		strcpy(pathToCommand, p); // Need to generate <path>/<command>
 		strcat(pathToCommand, "/");
 		strcat(pathToCommand, c->args[1]);
-		printf("PAth: %s\n", pathToCommand);
 		if(checkIsCommandPath(pathToCommand))
 			printf("%s\n", pathToCommand);
 
@@ -99,9 +99,15 @@ void where_cmd(Cmd c) {
 int checkIsCommandPath(char *path) {
 	struct stat sb;
 
-	if (stat(path, &sb) == 0 && (sb.st_mode & S_IXUSR))
+	if (stat(path, &sb) == 0 && S_ISREG(sb.st_mode))
 	{
 	    return 1;
 	}
+	return 0;
+}
+
+int hasExecPermission(char *pathToCmd) {
+	if(checkIsCommandPath(pathToCmd) && access(pathToCmd, R_OK|X_OK) == 0)
+		return 1;
 	return 0;
 }

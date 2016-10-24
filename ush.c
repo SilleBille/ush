@@ -13,7 +13,8 @@
 #include <signal.h>
 #include <sys/unistd.h>
 #include <fcntl.h>
-#include<string.h>
+#include <string.h>
+#include <errno.h>
 #include "parse.h"
 #include "builtin.h"
 
@@ -82,7 +83,7 @@ void prSymbols(Cmd c) {
 				close(fd);
 				break;
 			case Tpipe:
-				printf("| ");
+				printf("\n| \n");
 				break;
 			case TpipeErr:
 				printf("|& ");
@@ -113,24 +114,18 @@ static void prCmd(Cmd c) {
 		exit(0);
 
 	if (isBuiltIn(c->args[0]) != -1) {
-		saveFileDesc();
-		prSymbols(c);
 
 		if (strcmp(c->args[0], "cd") == 0) {
-			prSymbols(c);
 			cd_cmd(c);
 		} else if (strcmp(c->args[0], "echo") == 0) {
-			prSymbols(c);
 			echo_cmd(c);
-		} else if(strcmp(c->args[0], "logout") == 0) {
+		} else if (strcmp(c->args[0], "logout") == 0) {
 			logout_cmd();
-		} else if(strcmp(c->args[0], "pwd") == 0) {
+		} else if (strcmp(c->args[0], "pwd") == 0) {
 			pwd_cmd();
-		} else if(strcmp(c->args[0], "where") == 0) {
-			prSymbols(c);
+		} else if (strcmp(c->args[0], "where") == 0) {
 			where_cmd(c);
 		}
-		restoreFileDesc();
 	} else {
 		// Fork only if it's not a built in
 		pid = fork();
@@ -144,11 +139,26 @@ static void prCmd(Cmd c) {
 		} else if (pid == 0) {
 
 			// child process
-			prSymbols(c);
 			// Only if it's not built in command
 			execvp(c->args[0], c->args);
+
+			// Shouldn't return. If returns, them some error occured
+			switch(errno) {
+			case EISDIR:
+			case EACCES:
+				printf("permission denied\n");
+				break;
+			case ENOENT:
+				printf("command not found\n");
+				break;
+			default:
+				break;
+			}
+			exit(0);
 		}
+
 	}
+
 
 }
 static void prPipe(Pipe p) {
@@ -161,8 +171,11 @@ static void prPipe(Pipe p) {
 	// printf("Begin pipe%s\n", p->type == Pout ? "" : " Error");
 	for (c = p->head; c != NULL; c = c->next) {
 		// printf("  Cmd #%d: ", ++i);
-		// I'm going to process commands
+		// I'm going to save the file desc, process symbols and then commands
+		saveFileDesc();
+		prSymbols(c);
 		prCmd(c);
+		restoreFileDesc();
 	}
 	// printf("End pipe\n");
 	prPipe(p->next);
