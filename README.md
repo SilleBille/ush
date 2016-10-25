@@ -1,7 +1,7 @@
-README for ush parser and Micro shell (ush). 
+#README for ush parser and Micro shell (ush). 
 
 Vincent W. Freeh
-================
+----------------
 
 This a parser for a csh-like syntax.  It is to be used for the ush
 shell project.
@@ -21,8 +21,11 @@ contains all the information in a line of input to a shell.
 
 
 Dinesh Prasanth M K
-====================
+-------------------
 
 This Micro shell (ush) has following built-in commands:
 - cd
 - where
+
+supports:
+- redirection (>, >&, >>, >>&)

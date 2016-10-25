@@ -11,7 +11,7 @@
 #include"parse.h"
 
 int isBuiltIn(char *c);
-int hasExecPermission(char *pathToCmd);
+/*int hasExecPermission(char *pathToCmd);*/
 
 void cd_cmd(Cmd c);
 void echo_cmd(Cmd c);

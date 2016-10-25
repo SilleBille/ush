@@ -5,8 +5,8 @@
 
 CC=gcc
 CFLAGS=-g
-SRC=ush.c parse.c parse.h
-OBJ=ush.o parse.o
+SRC=builtin.h builtin.c parse.c parse.h ush.c
+OBJ=parse.o builtin.o ush.o 
 
 all: ush
 

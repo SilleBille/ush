@@ -43,6 +43,21 @@ void restoreFileDesc() {
 	dup2(ofd_stderr, STDERR_FILENO);
 }
 
+void disableSignals() {
+	/* Ignore interactive and job-control signals.  */
+	signal(SIGINT, SIG_IGN);
+	signal(SIGQUIT, SIG_IGN);
+	signal(SIGTERM, SIG_IGN); // handle ctrl+d
+	signal(SIGTSTP, SIG_IGN); // handle ctrl+z
+}
+
+void enableSignals() {
+	signal(SIGINT, SIG_DFL);
+	signal(SIGQUIT, SIG_DFL);
+	signal(SIGTERM, SIG_DFL); // handle ctrl+d
+	signal(SIGTSTP, SIG_DFL); // handle ctrl+z
+}
+
 void prSymbols(Cmd c) {
 	int i;
 	int fd;
@@ -97,11 +112,7 @@ void prSymbols(Cmd c) {
 			case Tpipe:
 				// printf("\n| \n");
 				pipe(pipefd[pipeRef]);
-				// 0 - read place; 1 - write place
-				dup2(pipefd[pipeRef][1], STDOUT_FILENO);
-				close(pipefd[pipeRef][0]);
 				shouldRestore = 0;
-				//close(pipefd[pipeRef][0]);
 				isPipeActive = 1;
 				break;
 			case TpipeErr:
@@ -145,6 +156,7 @@ static void prCmd(Cmd c) {
 	if (isBuiltIn(c->args[0]) != -1 && shouldBuiltInFork == 0) {
 		execute_builtin(c);
 	} else {
+
 		// Fork only if it's not a built in
 		pid = fork();
 		if (pid < 0)
@@ -153,9 +165,26 @@ static void prCmd(Cmd c) {
 			// parent process
 
 			int status;
-			waitpid(pid, &status, 0);
-		} else if (pid == 0) {
 
+			if (isPipeActive == 1) {
+				isPipeActive = 2;
+			} else if (isPipeActive == 2) {
+				close(pipefd[pipeRef][0]);
+				close(pipefd[pipeRef][1]);
+				isPipeActive = 0;
+				// Finished using the pipe. Throw it away
+				pipeRef++;
+			}
+			waitpid(pid, &status, 0);
+
+		} else if (pid == 0) {
+			if (isPipeActive == 1) {
+				dup2(pipefd[pipeRef][1], 1);
+				close(pipefd[pipeRef][0]);
+			} else if (isPipeActive == 2) {
+				dup2(pipefd[pipeRef][0], 0);
+				close(pipefd[pipeRef][1]);
+			}
 			// child process
 
 			if (isBuiltIn(c->args[0]) != -1 && shouldBuiltInFork == 1)
@@ -163,6 +192,8 @@ static void prCmd(Cmd c) {
 			else {
 				// Only if it's not built in command
 				fprintf(stderr, "I'm not built-in\n");
+				enableSignals();
+
 				execvp(c->args[0], c->args);
 
 				// Shouldn't return. If returns, them some error occured
@@ -200,14 +231,9 @@ static void prPipe(Pipe p) {
 		// printf("  Cmd #%d: ", ++i);
 		// Check if there is a pipe. If so, the builtIn should fork
 		shouldBuiltInFork = (c->next != NULL) ? 1 : 0;
-		if (isPipeActive == 1) {
-			dup2(pipefd[pipeRef][0], 0);
-			close(pipefd[pipeRef][1]);
-			isPipeActive = 0;
-		}
+
 		prSymbols(c);
 		prCmd(c);
-
 		// If current cmd is the last, you MUST restore the pipelines
 		if (c->next == NULL) {
 			shouldRestore = 1;
@@ -215,7 +241,6 @@ static void prPipe(Pipe p) {
 		if (shouldRestore == 1) {
 			restoreFileDesc();
 		}
-		fprintf(stderr, "is there a next? %d \n", (c->next != NULL));
 		/*if ( c->nargs > 1 ) {
 		 printf("[");
 		 for ( i = 1; c->args[i] != NULL; i++ )
@@ -223,8 +248,7 @@ static void prPipe(Pipe p) {
 		 printf("\b]");
 		 }*/
 	}
-	// Since the commands can be background or foreground, you need to use different pipes. Increment for next pipe
-	pipeRef++;
+
 	// printf("End pipe\n");
 	prPipe(p->next);
 }
@@ -233,16 +257,12 @@ int main(int argc, char *argv[]) {
 	Pipe p;
 	char host[128];
 	gethostname(host, sizeof(host));
-	/* Ignore interactive and job-control signals.  */
-	signal(SIGINT, SIG_IGN);
-	signal(SIGQUIT, SIG_IGN);
-	signal(SIGTERM, SIG_IGN); // handle ctrl+d
-	signal(SIGTSTP, SIG_IGN); // handle ctrl+z
 
 	// I'm going to save the file desc, process symbols and then commands
 	saveFileDesc();
 	while (1) {
 		printf("%s%% ", host);
+		disableSignals();
 		p = parse();
 		prPipe(p);
 		freePipe(p);
