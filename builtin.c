@@ -13,11 +13,11 @@
 #include<errno.h>
 #include"builtin.h"
 
-int isDirectory(char * path) {
+/*int isDirectory(char * path) {
 	struct stat sb;
 
 	return (stat(path, &sb) == 0 && S_ISDIR(sb.st_mode));
-}
+}*/
 int isBuiltIn(char *c) {
 	int i = 0;
 	for (i = 0; i < 12; i++) {
@@ -106,8 +106,8 @@ int checkIsCommandPath(char *path) {
 	return 0;
 }
 
-int hasExecPermission(char *pathToCmd) {
+/*int hasExecPermission(char *pathToCmd) {
 	if(checkIsCommandPath(pathToCmd) && access(pathToCmd, R_OK|X_OK) == 0)
 		return 1;
 	return 0;
-}
+}*/
