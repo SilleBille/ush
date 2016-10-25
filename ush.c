@@ -18,6 +18,9 @@
 #include "parse.h"
 #include "builtin.h"
 
+#define TRUE 1
+#define FALSE 0
+
 int ofd_stdin;
 int ofd_stdout;
 int ofd_stderr;
@@ -26,8 +29,9 @@ int shouldBuiltInFork;
 int shouldRestore;
 
 int pipefd[100][2];
-int pipeRef = 0;
-int isPipeActive = 0;
+int pipeRef = -1;
+int writeToPipe[10] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+int readFromPipe[10] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
 
 // You need to save the FD to recover if built in command is executed!
 void saveFileDesc() {
@@ -61,7 +65,6 @@ void enableSignals() {
 void prSymbols(Cmd c) {
 	int i;
 	int fd;
-
 	if (c) {
 		// printf("%s%s ", c->exec == Tamp ? "BG " : "", c->args[0]);
 		if (c->in == Tin) {
@@ -71,6 +74,9 @@ void prSymbols(Cmd c) {
 			fd = open(c->infile, O_RDONLY);
 			dup2(fd, STDIN_FILENO);
 			close(fd);
+		}
+		if (c->in == Tpipe) {
+			readFromPipe[pipeRef] = 1;
 		}
 		if (c->out != Tnil)
 			switch (c->out) {
@@ -111,9 +117,13 @@ void prSymbols(Cmd c) {
 				break;
 			case Tpipe:
 				// printf("\n| \n");
+				pipeRef++;
 				pipe(pipefd[pipeRef]);
+
+				writeToPipe[pipeRef] = 1;
+
 				shouldRestore = 0;
-				isPipeActive = 1;
+				// isPipeActive[pipeRef] = 1;
 				break;
 			case TpipeErr:
 				printf("|& ");
@@ -166,24 +176,25 @@ static void prCmd(Cmd c) {
 
 			int status;
 
-			if (isPipeActive == 1) {
-				isPipeActive = 2;
-			} else if (isPipeActive == 2) {
-				close(pipefd[pipeRef][0]);
+			waitpid(pid, &status, 0); // Wait for the child to complete its execution
+
+			if(writeToPipe[pipeRef] == TRUE) {
 				close(pipefd[pipeRef][1]);
-				isPipeActive = 0;
-				// Finished using the pipe. Throw it away
-				pipeRef++;
+				writeToPipe[pipeRef] = FALSE;
 			}
-			waitpid(pid, &status, 0);
+
+
 
 		} else if (pid == 0) {
-			if (isPipeActive == 1) {
+			int whichPipeToReadFrom = pipeRef;
+			if (writeToPipe[pipeRef] == TRUE) {
 				dup2(pipefd[pipeRef][1], 1);
 				close(pipefd[pipeRef][0]);
-			} else if (isPipeActive == 2) {
-				dup2(pipefd[pipeRef][0], 0);
-				close(pipefd[pipeRef][1]);
+				whichPipeToReadFrom = pipeRef - 1;
+			}
+			if (readFromPipe[whichPipeToReadFrom] == TRUE) {
+				dup2(pipefd[whichPipeToReadFrom][0], 0);
+				close(pipefd[whichPipeToReadFrom][1]);
 			}
 			// child process
 
@@ -191,7 +202,7 @@ static void prCmd(Cmd c) {
 				execute_builtin(c);
 			else {
 				// Only if it's not built in command
-				fprintf(stderr, "I'm not built-in\n");
+				// fprintf(stderr, "%s I'm not built-in\n", c->args[0]);
 				enableSignals();
 
 				execvp(c->args[0], c->args);
@@ -248,7 +259,6 @@ static void prPipe(Pipe p) {
 		 printf("\b]");
 		 }*/
 	}
-
 	// printf("End pipe\n");
 	prPipe(p->next);
 }
@@ -260,9 +270,11 @@ int main(int argc, char *argv[]) {
 
 	// I'm going to save the file desc, process symbols and then commands
 	saveFileDesc();
+
 	while (1) {
 		printf("%s%% ", host);
 		disableSignals();
+		pipeRef = -1;
 		p = parse();
 		prPipe(p);
 		freePipe(p);
