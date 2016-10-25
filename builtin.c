@@ -56,7 +56,9 @@ void echo_cmd(Cmd c) {
 		return;
 	}
 	for (i = 1; c->args[i] != NULL; i++) {
-		fprintf(stdout, "%s ", c->args[i]);
+		fprintf(stdout, "%s", c->args[i]);
+
+		if(c->args[i+1] != NULL) fprintf(stdout, " ");
 	}
 	fprintf(stdout, "\n");
 }
