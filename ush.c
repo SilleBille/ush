@@ -32,7 +32,7 @@ int pipefd[100][2];
 int pipeRef = -1;
 int writeToPipe[10] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
 int readFromPipe[10] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
-
+int pipeWriteWithErr = 0;
 
 int isRcParsing = 0;
 
@@ -124,7 +124,7 @@ void prSymbols(Cmd c) {
 				shouldRestore = 1;
 				break;
 			case Tpipe:
-				// printf("\n| \n");
+				// printf("| ");
 				pipeRef++;
 				pipe(pipefd[pipeRef]);
 
@@ -134,7 +134,13 @@ void prSymbols(Cmd c) {
 				// isPipeActive[pipeRef] = 1;
 				break;
 			case TpipeErr:
-				printf("|& ");
+				// printf("|& ");
+				pipeRef++;
+				pipe(pipefd[pipeRef]);
+
+				writeToPipe[pipeRef] = 1;
+
+				pipeWriteWithErr = 1;
 				shouldRestore = 0;
 				break;
 			default:
@@ -154,11 +160,11 @@ void prSymbols(Cmd c) {
 		if (!strcmp(c->args[0], "end")) {
 			if (isRcParsing == FALSE) {
 				// Comes in when < is given from BASH
-				fprintf(stderr, "NO RC PROCESSING REQUIRED! Just QUITE!\n");
+				// fprintf(stderr, "NO RC PROCESSING REQUIRED! Just QUITE!\n");
 				exit(0);
 			} else {
 				// Comes in when .ushrc file is executed
-				fprintf(stderr, "RC PROCDSSING DONE!!!\n");
+				// fprintf(stderr, "RC PROCDSSING DONE!!!\n");
 				isRcParsing = FALSE;
 			}
 		}
@@ -182,8 +188,8 @@ static void execute_builtin(Cmd c) {
 static void prCmd(Cmd c) {
 	int i;
 	pid_t pid;
-	printf("trying to execute: %s\n", c->args[0]);
-	// this driver understands one command
+	if (strcmp(c->args[0], "end") == 0)
+		return;
 	if (isBuiltIn(c->args[0]) != -1 && shouldBuiltInFork == 0) {
 		enableSignals();
 		execute_builtin(c);
@@ -204,12 +210,21 @@ static void prCmd(Cmd c) {
 			if (writeToPipe[pipeRef] == TRUE) {
 				close(pipefd[pipeRef][1]);
 				writeToPipe[pipeRef] = FALSE;
+				if(pipeWriteWithErr == 1) {
+					pipeWriteWithErr = 0;
+
+				}
 			}
 
 		} else if (pid == 0) {
 			int whichPipeToReadFrom = pipeRef;
 			if (writeToPipe[pipeRef] == TRUE) {
 				dup2(pipefd[pipeRef][1], 1);
+
+				if(pipeWriteWithErr == 1) {
+					dup2(pipefd[pipeRef][1], 2);
+				}
+
 				close(pipefd[pipeRef][0]);
 				whichPipeToReadFrom = pipeRef - 1;
 			}
@@ -326,11 +341,11 @@ int main(int argc, char *argv[]) {
 	// dup2(stdin, tempfd);
 	// fseek (tempfd, 0, SEEK_END);
 
-	num = ftell (stdin);
+	num = ftell(stdin);
 
-	printf("Is the stdin presend? %d\n", num);
+	// printf("Is the stdin presend? %d\n", num);
 
-	if(num != -1)
+	if (num != -1)
 		isStdinPresent = TRUE;
 	initshell();
 
