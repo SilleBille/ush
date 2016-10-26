@@ -70,7 +70,7 @@ void logout_cmd() {
 void pwd_cmd() {
 	char *cwd = (char *) malloc(2000 * sizeof(char));
 	cwd = get_current_dir_name();
-	printf("%s\n", cwd);
+	fprintf(stdout, "%s\n", cwd);
 }
 
 void where_cmd(Cmd c) {
@@ -80,7 +80,7 @@ void where_cmd(Cmd c) {
 	char delimiter[1];
 	delimiter[0] = ':'; // The path is separated using :
 	if (isBuiltIn(c->args[1]) != -1) {
-		printf("%s\n", c->args[1]);
+		printf("%s: shell built-in command.\n", c->args[1]);
 	}
 	char *p = strtok(path, delimiter);
 	char *pathToCommand = (char *)malloc(sizeof(char) * 150);
@@ -98,6 +98,34 @@ void where_cmd(Cmd c) {
 
 }
 
+void setenv_cmd(Cmd c) {
+	extern char **environ;
+	char **availableEnviron = environ;
+
+	if(c->args[1] == NULL) {
+		// If there are no arguments, Print all available paths
+		for(;*availableEnviron != NULL; *availableEnviron ++)
+			fprintf(stdout, "%s\n", *availableEnviron);
+	} else {
+		// Some arguments are there.
+		// args[1] = NAME,
+		// args[2] = VALUE
+		if(c->args[2] == NULL) {
+			// If no word
+			setenv(c->args[1], "", 1);
+		} else {
+			setenv(c->args[1], c->args[2], 1);
+		}
+	}
+}
+
+void unsetenv_cmd(Cmd c) {
+	if(c->args[1] != NULL) {
+		unsetenv(c->args[1]);
+	} else {
+		fprintf(stderr, "unsetenv: Too few arguments.");
+	}
+}
 int checkIsCommandPath(char *path) {
 	struct stat sb;
 

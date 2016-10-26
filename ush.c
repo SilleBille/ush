@@ -134,7 +134,7 @@ void prSymbols(Cmd c) {
 				// isPipeActive[pipeRef] = 1;
 				break;
 			case TpipeErr:
-				// printf("|& ");
+				// printf("|& Piperef: %d\n", pipeRef);
 				pipeRef++;
 				pipe(pipefd[pipeRef]);
 
@@ -182,6 +182,10 @@ static void execute_builtin(Cmd c) {
 		pwd_cmd();
 	} else if (strcmp(c->args[0], "where") == 0) {
 		where_cmd(c);
+	} else if(strcmp(c->args[0], "setenv") == 0) {
+		setenv_cmd(c);
+	} else if(strcmp(c->args[0], "unsetenv") == 0) {
+		unsetenv_cmd(c);
 	}
 }
 

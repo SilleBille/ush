@@ -19,6 +19,8 @@ void kill_cmd(Cmd c);
 void logout_cmd();
 void pwd_cmd();
 void where(Cmd c);
+void setenv_cmd(Cmd c);
+void unsetenv_cmd(Cmd c);
 
 static char *builtin_command[] = {
 		"bg", "cd", "fg", "echo", "jobs", "kill", "logout",
