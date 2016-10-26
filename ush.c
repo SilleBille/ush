@@ -186,6 +186,8 @@ static void execute_builtin(Cmd c) {
 		setenv_cmd(c);
 	} else if(strcmp(c->args[0], "unsetenv") == 0) {
 		unsetenv_cmd(c);
+	}else if(strcmp(c->args[0], "nice") == 0) {
+		nice_cmd(c);
 	}
 }
 
