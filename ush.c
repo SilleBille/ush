@@ -33,6 +33,13 @@ int pipeRef = -1;
 int writeToPipe[10] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
 int readFromPipe[10] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
 
+
+int isRcParsing = 0;
+
+int shouldPrintPrompt = FALSE;
+int isPromptRequired = FALSE;
+int isStdinPresent = FALSE;
+
 // You need to save the FD to recover if built in command is executed!
 void saveFileDesc() {
 	ofd_stdin = dup(STDIN_FILENO);
@@ -65,6 +72,7 @@ void enableSignals() {
 void prSymbols(Cmd c) {
 	int i;
 	int fd;
+
 	if (c) {
 		// printf("%s%s ", c->exec == Tamp ? "BG " : "", c->args[0]);
 		if (c->in == Tin) {
@@ -78,7 +86,7 @@ void prSymbols(Cmd c) {
 		if (c->in == Tpipe) {
 			readFromPipe[pipeRef] = 1;
 		}
-		if (c->out != Tnil)
+		if (c->out != Tnil) {
 			switch (c->out) {
 			case Tout:
 				// printf(">(%s) ", c->outfile);
@@ -133,6 +141,7 @@ void prSymbols(Cmd c) {
 				fprintf(stderr, "Shouldn't get here\n");
 				exit(-1);
 			}
+		}
 
 		/*if (c->nargs > 1) {
 		 printf("[");
@@ -141,6 +150,18 @@ void prSymbols(Cmd c) {
 		 printf("\b]");
 		 }*/
 		// putchar('\n');
+		// this driver understands one command
+		if (!strcmp(c->args[0], "end")) {
+			if (isRcParsing == FALSE) {
+				// Comes in when < is given from BASH
+				fprintf(stderr, "NO RC PROCESSING REQUIRED! Just QUITE!\n");
+				exit(0);
+			} else {
+				// Comes in when .ushrc file is executed
+				fprintf(stderr, "RC PROCDSSING DONE!!!\n");
+				isRcParsing = FALSE;
+			}
+		}
 	}
 }
 
@@ -161,10 +182,12 @@ static void execute_builtin(Cmd c) {
 static void prCmd(Cmd c) {
 	int i;
 	pid_t pid;
-
+	printf("trying to execute: %s\n", c->args[0]);
 	// this driver understands one command
 	if (isBuiltIn(c->args[0]) != -1 && shouldBuiltInFork == 0) {
+		enableSignals();
 		execute_builtin(c);
+		disableSignals();
 	} else {
 
 		// Fork only if it's not a built in
@@ -178,12 +201,10 @@ static void prCmd(Cmd c) {
 
 			waitpid(pid, &status, 0); // Wait for the child to complete its execution
 
-			if(writeToPipe[pipeRef] == TRUE) {
+			if (writeToPipe[pipeRef] == TRUE) {
 				close(pipefd[pipeRef][1]);
 				writeToPipe[pipeRef] = FALSE;
 			}
-
-
 
 		} else if (pid == 0) {
 			int whichPipeToReadFrom = pipeRef;
@@ -198,9 +219,11 @@ static void prCmd(Cmd c) {
 			}
 			// child process
 
-			if (isBuiltIn(c->args[0]) != -1 && shouldBuiltInFork == 1)
+			if (isBuiltIn(c->args[0]) != -1 && shouldBuiltInFork == 1) {
+				enableSignals();
 				execute_builtin(c);
-			else {
+				disableSignals();
+			} else {
 				// Only if it's not built in command
 				// fprintf(stderr, "%s I'm not built-in\n", c->args[0]);
 				enableSignals();
@@ -232,7 +255,8 @@ static void prPipe(Pipe p) {
 	Cmd c;
 
 	if (p == NULL) {
-		restoreFileDesc();
+		// restoreFileDesc();
+		// doneProcessingInit = 1;
 		return;
 	}
 	//printf("should the builtin be forked? %d\n", shouldBuiltInFork);
@@ -249,7 +273,8 @@ static void prPipe(Pipe p) {
 		if (c->next == NULL) {
 			shouldRestore = 1;
 		}
-		if (shouldRestore == 1) {
+
+		if (shouldRestore == 1 && isRcParsing == FALSE) {
 			restoreFileDesc();
 		}
 		/*if ( c->nargs > 1 ) {
@@ -263,18 +288,58 @@ static void prPipe(Pipe p) {
 	prPipe(p->next);
 }
 
-int main(int argc, char *argv[]) {
-	Pipe p;
+void initshell() {
+	Pipe p1;
+	char *pathToUshrc = (char *) malloc((sizeof(char) * 2000));
+	strcpy(pathToUshrc, getenv("HOME"));
+	strcat(pathToUshrc, "/.ushrc");
+	int ret = access(pathToUshrc, F_OK | R_OK);
+	int fd;
+	if (ret == 0) {
+		fd = open(pathToUshrc, O_RDONLY);
+		dup2(fd, STDIN_FILENO);
+		close(fd);
+
+		isRcParsing = TRUE;
+
+		isPromptRequired = FALSE;
+		//fflush(stdout);
+	}
+}
+void setupPrompt() {
 	char host[128];
 	gethostname(host, sizeof(host));
+	if (!isStdinPresent) {
+		printf("%s%% ", host);
+		fflush(stdout);
+	}
+}
+
+int main(int argc, char *argv[]) {
+	Pipe p;
+	int num;
 
 	// I'm going to save the file desc, process symbols and then commands
 	saveFileDesc();
 
+	// int tempfd;
+	// dup2(stdin, tempfd);
+	// fseek (tempfd, 0, SEEK_END);
+
+	num = ftell (stdin);
+
+	printf("Is the stdin presend? %d\n", num);
+
+	if(num != -1)
+		isStdinPresent = TRUE;
+	initshell();
+
 	while (1) {
-		printf("%s%% ", host);
+
+		setupPrompt();
 		disableSignals();
 		pipeRef = -1;
+
 		p = parse();
 		prPipe(p);
 		freePipe(p);
