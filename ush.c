@@ -15,6 +15,7 @@
 #include <fcntl.h>
 #include <string.h>
 #include <errno.h>
+#include <unistd.h>
 #include "parse.h"
 #include "builtin.h"
 
@@ -40,6 +41,18 @@ int shouldPrintPrompt = FALSE;
 int isPromptRequired = FALSE;
 int isStdinPresent = FALSE;
 
+pid_t processGroupId = 7171;
+int shouldBreakThePipe = 0;
+
+int isBackground = 0;
+
+int jobid = 0;
+
+void setupPrompt();
+void mySignalHandle() {
+	fprintf(stdout, "\n");
+	setupPrompt();
+}
 // You need to save the FD to recover if built in command is executed!
 void saveFileDesc() {
 	ofd_stdin = dup(STDIN_FILENO);
@@ -56,9 +69,9 @@ void restoreFileDesc() {
 
 void disableSignals() {
 	/* Ignore interactive and job-control signals.  */
-	signal(SIGINT, SIG_IGN);
+	signal(SIGINT, mySignalHandle);
 	signal(SIGQUIT, SIG_IGN);
-	signal(SIGTERM, SIG_IGN); // handle ctrl+d
+	signal(SIGTERM, mySignalHandle); // handle ctrl+d
 	signal(SIGTSTP, SIG_IGN); // handle ctrl+z
 }
 
@@ -75,6 +88,12 @@ void prSymbols(Cmd c) {
 
 	if (c) {
 		// printf("%s%s ", c->exec == Tamp ? "BG " : "", c->args[0]);
+		if (c->exec == Tamp) {
+			isBackground = 1;
+			jobid++;
+		} else {
+			isBackground = 0;
+		}
 		if (c->in == Tin) {
 			// printf("<(%s) ", c->infile);
 
@@ -83,7 +102,7 @@ void prSymbols(Cmd c) {
 			dup2(fd, STDIN_FILENO);
 			close(fd);
 		}
-		if (c->in == Tpipe) {
+		if (c->in == Tpipe || c->in == TpipeErr) {
 			readFromPipe[pipeRef] = 1;
 		}
 		if (c->out != Tnil) {
@@ -160,7 +179,6 @@ void prSymbols(Cmd c) {
 		if (!strcmp(c->args[0], "end")) {
 			if (isRcParsing == FALSE) {
 				// Comes in when < is given from BASH
-				// fprintf(stderr, "NO RC PROCESSING REQUIRED! Just QUITE!\n");
 				exit(0);
 			} else {
 				// Comes in when .ushrc file is executed
@@ -182,11 +200,11 @@ static void execute_builtin(Cmd c) {
 		pwd_cmd();
 	} else if (strcmp(c->args[0], "where") == 0) {
 		where_cmd(c);
-	} else if(strcmp(c->args[0], "setenv") == 0) {
+	} else if (strcmp(c->args[0], "setenv") == 0) {
 		setenv_cmd(c);
-	} else if(strcmp(c->args[0], "unsetenv") == 0) {
+	} else if (strcmp(c->args[0], "unsetenv") == 0) {
 		unsetenv_cmd(c);
-	}else if(strcmp(c->args[0], "nice") == 0) {
+	} else if (strcmp(c->args[0], "nice") == 0) {
 		nice_cmd(c);
 	}
 }
@@ -194,6 +212,8 @@ static void execute_builtin(Cmd c) {
 static void prCmd(Cmd c) {
 	int i;
 	pid_t pid;
+	int status;
+
 	if (strcmp(c->args[0], "end") == 0)
 		return;
 	if (isBuiltIn(c->args[0]) != -1 && shouldBuiltInFork == 0) {
@@ -208,18 +228,26 @@ static void prCmd(Cmd c) {
 			perror("Fork error!\n");
 		else if (pid > 0) {
 			// parent process
-
+			setpgid(pid, processGroupId);
 			int status;
 
-			waitpid(pid, &status, 0); // Wait for the child to complete its execution
+			if (isBackground == 0) {
+				waitpid(pid, &status, 0); // Wait for the child to complete its execution
+				if (writeToPipe[pipeRef] == TRUE) {
+					close(pipefd[pipeRef][1]);
+					writeToPipe[pipeRef] = FALSE;
+					if (pipeWriteWithErr == 1) {
+						pipeWriteWithErr = 0;
 
-			if (writeToPipe[pipeRef] == TRUE) {
-				close(pipefd[pipeRef][1]);
-				writeToPipe[pipeRef] = FALSE;
-				if(pipeWriteWithErr == 1) {
-					pipeWriteWithErr = 0;
-
+					}
 				}
+				if (WIFEXITED(status)) {
+					if (WEXITSTATUS(status) == 3) {
+						shouldBreakThePipe = 1;
+					}
+				}
+			} else {
+				fprintf(stdout, "[%d] %d\n", jobid, pid);
 			}
 
 		} else if (pid == 0) {
@@ -227,7 +255,7 @@ static void prCmd(Cmd c) {
 			if (writeToPipe[pipeRef] == TRUE) {
 				dup2(pipefd[pipeRef][1], 1);
 
-				if(pipeWriteWithErr == 1) {
+				if (pipeWriteWithErr == 1) {
 					dup2(pipefd[pipeRef][1], 2);
 				}
 
@@ -244,6 +272,7 @@ static void prCmd(Cmd c) {
 				enableSignals();
 				execute_builtin(c);
 				disableSignals();
+				exit(EXIT_SUCCESS);
 			} else {
 				// Only if it's not built in command
 				// fprintf(stderr, "%s I'm not built-in\n", c->args[0]);
@@ -256,16 +285,18 @@ static void prCmd(Cmd c) {
 				case EISDIR:
 				case EACCES:
 					fprintf(stderr, "permission denied\n");
+					killpg(processGroupId, SIGKILL);
 					break;
 				case ENOENT:
 					fprintf(stderr, "command not found\n");
+					killpg(processGroupId, SIGKILL);
 					break;
 				default:
 					break;
 				}
 			}
 
-			exit(0);
+			exit(3);
 		}
 
 	}
@@ -274,7 +305,7 @@ static void prCmd(Cmd c) {
 static void prPipe(Pipe p) {
 	int i = 0;
 	Cmd c;
-
+	processGroupId++;
 	if (p == NULL) {
 		// restoreFileDesc();
 		// doneProcessingInit = 1;
@@ -283,7 +314,7 @@ static void prPipe(Pipe p) {
 	//printf("should the builtin be forked? %d\n", shouldBuiltInFork);
 
 	// printf("Begin pipe%s\n", p->type == Pout ? "" : " Error");
-	for (c = p->head; c != NULL; c = c->next) {
+	for (c = p->head; c != NULL && shouldBreakThePipe == 0; c = c->next) {
 		// printf("  Cmd #%d: ", ++i);
 		// Check if there is a pipe. If so, the builtIn should fork
 		shouldBuiltInFork = (c->next != NULL) ? 1 : 0;
@@ -305,6 +336,8 @@ static void prPipe(Pipe p) {
 		 printf("\b]");
 		 }*/
 	}
+
+	shouldBreakThePipe = 0;
 	// printf("End pipe\n");
 	prPipe(p->next);
 }
@@ -330,7 +363,7 @@ void initshell() {
 void setupPrompt() {
 	char host[128];
 	gethostname(host, sizeof(host));
-	if (!isStdinPresent) {
+	if (!isStdinPresent && !isRcParsing) {
 		printf("%s%% ", host);
 		fflush(stdout);
 	}
@@ -362,7 +395,9 @@ int main(int argc, char *argv[]) {
 		pipeRef = -1;
 
 		p = parse();
+
 		prPipe(p);
+
 		freePipe(p);
 	}
 }
