@@ -26,6 +26,20 @@ Dinesh Prasanth M K
 This Micro shell (ush) has following built-in commands:
 - cd
 - where
+- echo
+- nice
+- logout
+- pwd
+- setenv
+- unsetenv
 
 supports:
 - redirection (>, >&, >>, >>&)
+- supports multi pipe commands including stderr redirect (|, |&)
+
+Running
+-------
+		make
+		./ush
+		{yourhost}% [start typing commands]
+
